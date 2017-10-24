@@ -409,6 +409,7 @@ class S3Repository(YumRepository):
     def __init__(self, repoid, repo, conduit):
         super(S3Repository, self).__init__(repoid)
         self.repoid = repoid
+        self.repo = repo
         self.conduit = conduit
 
         # FIXME: dirty code here
@@ -422,6 +423,30 @@ class S3Repository(YumRepository):
 
         # Disabled region initialization
         # self.set_region()
+
+    def setup(self, cache, mediafunc = None, gpg_import_func=None, confirm_func=None, gpgca_import_func=None):
+        if gpg_import_func is not None:
+            replaced_gpg_import_func = self.new_gpg_import_func(gpg_import_func)
+        else:
+            replaced_gpg_import_func = None
+        super(S3Repository, self).setup(cache, mediafunc, replaced_gpg_import_func, confirm_func, gpgca_import_func)
+
+    def new_gpg_import_func(self, gpg_import_func):
+
+        def new_retrievePublicKey(keyurl, repo=None, getSig=True):
+            if repo and _check_s3_urls(keyurl):
+                old_headers = repo.http_headers
+                splitkeyurl = urlsplit(keyurl)
+                region_name = get_region_from_s3url(splitkeyurl.netloc)
+                if region_name:
+                    self.region = region_name
+                repo.http_headers = self.fetch_headers(keyurl, "")
+
+            key = old_retrieve_public_key(keyurl, repo, getSig)
+            return key
+
+        old_retrieve_public_key = gpg_import_func.__self__._retrievePublicKey
+        gpg_import_func.__self__._retrievePublicKey = new_retrievePublicKey
 
     def _getFile(self, url=None, relative=None, local=None,
                  start=None, end=None,
